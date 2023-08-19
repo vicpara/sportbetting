@@ -1,5 +1,8 @@
 import time
+import os
 import json
+import pandas as pd
+import selenium
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.wait import WebDriverWait
@@ -16,177 +19,143 @@ options.add_argument("--disable-blink-features=AutomationControlled")
 # create a Chrome driver instance with the options
 driver = webdriver.Chrome(options=options)
 
-# set implicit wait to 10 seconds for all elements to load before interacting with them
-driver.implicitly_wait(10)
+# set implicit wait to 3 seconds for all elements to load before interacting with them
+driver.implicitly_wait(1)
 
-########################################################
-# SCHIMBA AICI
-# URL_ul cu data care trebuie procesata
-url = 'https://int.soccerway.com/matches/2023/08/19/'
-driver.get(url)
-
-########################################################
-# wait for the page to load completely (here, 5 seconds are waited)
-time.sleep(5)
-
-print('Acceptam cookiesurile')
-# Accept cookies
-driver.find_elements('css selector', 'button[mode="primary"]')[0].click()
-time.sleep(1)
-print('   Am acceptat')
+columns = ['No', 'Id', 'League', 'Home', 'Away',
+           'MeciuriCuMax2goluri', 'MatchTime', 'Link']
+OUTPUT_FILE = 'matches.xlsx'
+DATA = '2023/08/19'
 
 
-# Run JAVASCRIPT to expand all groups
-print('Rulam javascript in browser pentru a expanda toate grupurile de meciuri. Apoi asteptam sa termine treaba.')
-js_script_expand_all_groups = '''
-let toatetarile = document.querySelectorAll('#livescores > div.livescores-comps > div.livescores-comp')
+# Load the existing XLSX file
+open_mode = 'w'
+sheet_exist_mode = None
+if os.path.exists(OUTPUT_FILE):
+    open_mode = 'a'
+    sheet_exist_mode = 'replace'
 
-const TIMPASTEPTARE_INTRE_GRUPURI= 150 //milisecunde
-Array.from(toatetarile).slice(0,20).forEach((tara,i) => 
-  setTimeout(() => {
-  tara.querySelector('h2h comparasion button').click()
-}, i*TIMPASTEPTARE_INTRE_GRUPURI))
-'''
-driver.execute_script(js_script_expand_all_groups)
-time.sleep(10)
-print('     Am rulat. Daca sunt multe meciuri e nevoie sa asatepta mai mult timp. Daca mai exista grupuri in pagina ne-expandate regleaza asteptarea de mai sus.')
+with pd.ExcelWriter(path=OUTPUT_FILE, engine='openpyxl', mode=open_mode, if_sheet_exists=sheet_exist_mode) as writer:
+    sheet_name = DATA.replace('/', '-')
+    df_matches = pd.DataFrame(columns=columns)
+    if open_mode == 'a':
+        book = writer.book
+        if sheet_name in book.sheetnames:
+            df_matches = pd.read_excel(
+                OUTPUT_FILE, sheet_name=sheet_name, engine='openpyxl')
 
-####################################################
-# get date from page
-page_date = driver.find_element(
-    By.CSS_SELECTOR, 'div#livescores').get_attribute('data-date')
-print('Am gasit in pagina data de: ', page_date)
+    ########################################################
+    # SCHIMBA AICI
+    # URL_ul cu data care trebuie procesata
+    url = 'https://int.soccerway.com/matches/' + DATA
+    driver.get(url)
+    print('Procesam URL: ', url)
 
-# find all HTML elements that contain match information
-match_elements = driver.find_elements("css selector", 'div.matchinfo')
-# create an empty list to add matches that are today or tomorrow
-matches = []
-url_str = '-'.join(url.split('soccerway.com')[1].split('/'))
-out_text = f'meciuri-{url_str}.txt'
-with open(out_text, 'w', encoding='utf-8') as f:
-    f.write(f"Data paginii: {page_date}\n")
-    f.write(f"{'Acasa':<25} {'Deplasare':<25} {'Data':<25} Link\n")
-    for el in match_elements:
-        try:
-            match_time = el.find_element(
-                By.CSS_SELECTOR, "div.timebox > time").get_attribute("datetime")
-            home_team = el.find_element(
-                By.CSS_SELECTOR, "div.team_a").text.strip()
-            away_team = el.find_element(
-                By.CSS_SELECTOR, "div.team_b").text.strip()
-            link = el.find_element(
-                By.CSS_SELECTOR, "div.teams > a").get_attribute("href")
-            print(f"{match_time} {home_team:<25} vs. {away_team:<25}")
-            f.write(f"{home_team:<25} {away_team:<25} {match_time:<25} {link}\n")
-            matches.append({'home': home_team, 'away': away_team,
-                           'datetime': match_time, 'link': link})
+    ########################################################
+    # wait for the page to load completely (here, 5 seconds are waited)
+    time.sleep(1)
+    print('Acceptam cookiesurile')
+    # Accept cookies
+    driver.find_elements('css selector', 'button[mode="primary"]')[0].click()
+    time.sleep(1)
+    print('   Am acceptat')
 
-        except Exception as e:
-            # do something in case the date or time element is not found
-            print('Eroare', e)
-            pass
-print('OK. Am scris rezultate TEXT la ', out_text)
+    # Run JAVASCRIPT to expand all groups
+    print('Rulam javascript in browser pentru a expanda toate grupurile de meciuri. Apoi asteptam sa termine treaba.')
+    js_script_expand_all_groups = '''
+    let toatetarile = document.querySelectorAll('#livescores > div.livescores-comps > div.livescores-comp')
 
-out_json = f'meciuri-{page_date}.json'
-with open(out_json, 'w') as fp:
-    json.dump(matches, fp)
-print('OK. Am scris rezultate in JSON la ', out_json)
+    const TIMPASTEPTARE_INTRE_GRUPURI= 50 //milisecunde
+    Array.from(toatetarile).forEach((tara,i) => 
+        setTimeout(() => {
+        if(tara.getAttribute('data-expanded')=="1") return
+        tara.querySelector('h2 button.expand-icon').click()
+    }, i*TIMPASTEPTARE_INTRE_GRUPURI))
+    '''
+    driver.execute_script(js_script_expand_all_groups)
+    time.sleep(60)
+    print('\tAm rulat. Daca sunt multe meciuri e nevoie sa asatepta mai mult timp. Daca mai exista grupuri in pagina ne-expandate regleaza asteptarea de mai sus.')
 
-####################################################
-# partea 2 - extragere golaveraj din fiecare pagina.
-# din pacate nu merge inca..mai lucrez.
-print('Trecem la partea interesanta. Luam fiecare pagina la rand si extragem golaverajul.')
+    ####################################################
+    # get date from page
+    page_date = driver.find_element(
+        By.CSS_SELECTOR, 'div#livescores').get_attribute('data-date')
 
-matches_with_stats = []
-for m in matches:
-    print('\nProcesam ', m['home'], ' vs. ', m['away'], m)
-    count = 0
-    h2h_comparasion_link = m['link'].rstrip('/') + '/head2head/'
-    driver.get(h2h_comparasion_link)
-    # Așteaptă ca pagina să se încarce complet
-    # # wait for the page to load completely (here, 5 seconds are waited)
-    time.sleep(5)
+    index = 0
+    matches = []
+    league_roots = driver.find_elements(By.CSS_SELECTOR, 'div.livescores-comp')
+    print('Am gasit in pagina data de: ', page_date, ' urmatorul nr de campinate:', len(league_roots))
+    for league in league_roots:
+        league_name = league.find_element(By.CSS_SELECTOR, 'h2 > a').text
+        # find all HTML elements that contain match information
 
-    now_ts = int(datetime.now().utcnow())
-    matches_table_row = driver.find_elements(
-        By.CSS_SELECTOR, 'div.block_h2h_matches table.matches tbody tr')
-    for row in matches_table_row:
-        print('ROW', row)
-        match_ts = int(row.get_attribute('data-timestamp'))
-        if match_ts > now_ts:
+        match_elements = league.find_elements("css selector", 'div.matchinfo')
+        for el in match_elements:
+            try:
+                match_time = el.find_element(
+                    By.CSS_SELECTOR, "div.timebox > time").get_attribute("datetime")
+                home_team = el.find_element(
+                    By.CSS_SELECTOR, "div.team_a").text.strip()
+                away_team = el.find_element(
+                    By.CSS_SELECTOR, "div.team_b").text.strip()
+                link = el.find_element(
+                    By.CSS_SELECTOR, "div.teams > a").get_attribute("href")
+                print(
+                    f"{index:<3}  {league_name:<30}  {match_time} {home_team:<25} vs. {away_team:<25}")
+                id = home_team + '.' + away_team
+
+                if id not in df_matches['Id'].values:
+                    matches.append({'Id': id, 'No': index, 'League': league_name, 'Home': home_team, 'Away': away_team,
+                                    'MatchTime': match_time, 'MeciuriCuMax2goluri': 0, 'Link': link})
+                    index += 1
+
+            except Exception as e:
+                print('Eroare', e)
+                pass
+
+    df_matches = df_matches.append(matches, ignore_index=True)
+    df_matches.to_excel(writer, sheet_name=sheet_name, index=False)
+    print('Saved to xlsx file:', OUTPUT_FILE)
+
+    ####################################################
+    # partea 2 - extragere golaveraj din fiecare pagina.
+    print('#############\nTrecem la partea interesanta. Luam fiecare pagina la rand si extragem golaverajul.\n')
+
+    for index, m in df_matches.iterrows():
+        print('\nProcesam ', index, m['Home'], '-', m['Away'])
+        if m['Link'].endswith('/head2head/'):
             continue
-        score_cell = row.find_element(By.CSS_SELECTOR, 'td.score')
-        score = score_cell.text.strip().split
-        goals = sum(map(lambda e: int(e), map(lambda e: e.strip(), score.split('-'))))
-        if goals > 2:
-            break
-        count+=1
-        
-    if ()
+        count = 0
+        h2h_comparasion_link = m['Link'].rstrip('/') + '/head2head/'
+        driver.get(h2h_comparasion_link)
+        # Așteaptă ca pagina să se încarce complet (1 secunda)
+        time.sleep(0.3)
 
-        # Așteaptă ca pagina să se încarce complet
-        # wait for the page to load completely (here, 5 seconds are waited)
-    time.sleep(5)
-
-    # Extrage informațiile despre golaveraj din subpagina "head2head"
-    goals_table = driver.find_elements(By.CSS_SELECTOR, 'table.matches')[0]
-    rows = goals_table.find_elements(By.CSS_SELECTOR, 'tbody > tr')
-
-    home_goals = []
-    away_goals = []
-
-    for row in rows:
-        cells = row.find_elements(By.TAG_NAME, 'td')
-        home_goals.append(int(cells[1].text.strip()))
-        away_goals.append(int(cells[2].text.strip()))
-
-        # Verifică dacă meciurile îndeplinesc condiția de a marca sub 2 goluri în ultimele 4 meciuri
-    if len(home_goals) >= 3 and sum(home_goals[-3:]) < 6 and len(away_goals) >= 3 and sum(away_goals[-3:]) < 6:
-        matches_with_stats.append(m)
-
-    history = {}
-    home = []
-    away = []
-    for pm in past_matches:
-        try:
-            home_team = pm.find_element(
-                By.CSS_SELECTOR, 'td.team-a ').text.strip()
-            away_team = pm.find_element(
-                By.CSS_SELECTOR, 'td.team-b > a').text.strip()
-            score = pm.find_elements(By.CSS_SELECTOR, 'td.score')
-            if len(score) > 0:
-                score = score[0].text.strip()
-            else:
+        now_ts = int(datetime.now().timestamp())
+        matches_table_row = driver.find_elements(
+            By.CSS_SELECTOR, 'div.block_h2hsection_head2head table.matches tbody tr')
+        for row in matches_table_row:
+            try:
+                match_ts = row.get_attribute('data-timestamp')
+                if match_ts > str(now_ts) and match_ts < '1600000000':
+                    continue
+                score_cell = row.find_element(By.CSS_SELECTOR, 'td.score')
+                score = score_cell.text.strip()
+                if score[-1] == 'P':
+                    continue
+                goals = sum(map(lambda e: int(e), map(
+                    lambda e: e.strip(), score.split('-'))))
+                if goals > 2:
+                    break
+                count += 1
+            except selenium.common.exceptions.NoSuchElementException:
                 continue
-            home_score = int(score.split(' - ')[0].strip())
-            away_score = int(score.split(' - ')[1].strip())
 
-            for_team = {m['home'], m['away']}.intersection(
-                {home_team, away_team})
-            line = {home_team: home_score,
-                    away_team: away_score, 'for': for_team}
-
-            if for_team == m['home']:
-                home.append(line)
-            else:
-                away.append(line)
-
-            print(line)
-            matches_with_stats.append(
-                {'home': m['home'], 'away': m['away'], 'home_score': home_score, 'away_score': away_score})
-        except Exception as e:
-            print('Eroare', e)
-            pass
-    history['home'] = home
-    history['away'] = away
-    m['history'] = history
-    matches_with_stats.append(m)
-
-
-out_json = f'meciuri-cu-stats-{page_date}.json'
-with open(out_json, 'w') as fp:
-    json.dump(matches_with_stats, fp)
-print('OK. Am scris rezultate in JSON la ', out_json)
-
+        print('\t Nr meciuri cu golaveraj sub 2:', count)
+        m['MeciuriCuMax2goluri'] = count
+        df_matches.at[index, 'MeciuriCuMax2goluri'] = count
+        df_matches.at[index, 'Link'] = h2h_comparasion_link
+    df_matches.to_excel(writer, sheet_name=sheet_name, index=False)
+    print('Saved to xlsx file:', OUTPUT_FILE)
 
 exit(1)
