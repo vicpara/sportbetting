@@ -84,7 +84,8 @@ with pd.ExcelWriter(path=OUTPUT_FILE, engine='openpyxl', mode=open_mode, if_shee
     index = 0
     matches = []
     league_roots = driver.find_elements(By.CSS_SELECTOR, 'div.livescores-comp')
-    print('Am gasit in pagina data de: ', page_date, ' urmatorul nr de campinate:', len(league_roots))
+    print('Am gasit in pagina data de: ', page_date,
+          ' urmatorul nr de campinate:', len(league_roots))
     for league in league_roots:
         league_name = league.find_element(By.CSS_SELECTOR, 'h2 > a').text
         # find all HTML elements that contain match information
@@ -120,41 +121,46 @@ with pd.ExcelWriter(path=OUTPUT_FILE, engine='openpyxl', mode=open_mode, if_shee
     ####################################################
     # partea 2 - extragere golaveraj din fiecare pagina.
     print('#############\nTrecem la partea interesanta. Luam fiecare pagina la rand si extragem golaverajul.\n')
-
+    print('Avem de procesat ', df_matches.shape[1], 'meciuri')
     for index, m in df_matches.iterrows():
-        print('\nProcesam ', index, m['Home'], '-', m['Away'])
-        if m['Link'].endswith('/head2head/'):
-            continue
-        count = 0
-        h2h_comparasion_link = m['Link'].rstrip('/') + '/head2head/'
-        driver.get(h2h_comparasion_link)
-        # Așteaptă ca pagina să se încarce complet (1 secunda)
-        time.sleep(0.3)
-
-        now_ts = int(datetime.now().timestamp())
-        matches_table_row = driver.find_elements(
-            By.CSS_SELECTOR, 'div.block_h2hsection_head2head table.matches tbody tr')
-        for row in matches_table_row:
-            try:
-                match_ts = row.get_attribute('data-timestamp')
-                if match_ts > str(now_ts) and match_ts < '1600000000':
-                    continue
-                score_cell = row.find_element(By.CSS_SELECTOR, 'td.score')
-                score = score_cell.text.strip()
-                if score[-1] == 'P':
-                    continue
-                goals = sum(map(lambda e: int(e), map(
-                    lambda e: e.strip(), score.split('-'))))
-                if goals > 2:
-                    break
-                count += 1
-            except selenium.common.exceptions.NoSuchElementException:
+        try:
+            print('\nProcesam ', index, m['Home'], '-', m['Away'])
+            if m['Link'].endswith('/head2head/'):
                 continue
+            count = 0
+            h2h_comparasion_link = m['Link'].rstrip('/') + '/head2head/'
+            driver.get(h2h_comparasion_link)
+            # Așteaptă ca pagina să se încarce complet (1 secunda)
+            time.sleep(0.3)
 
-        print('\t Nr meciuri cu golaveraj sub 2:', count)
-        m['MeciuriCuMax2goluri'] = count
-        df_matches.at[index, 'MeciuriCuMax2goluri'] = count
-        df_matches.at[index, 'Link'] = h2h_comparasion_link
+            now_ts = int(datetime.now().timestamp())
+            matches_table_row = driver.find_elements(
+                By.CSS_SELECTOR, 'div.block_h2hsection_head2head table.matches tbody tr')
+            for row in matches_table_row:
+                try:
+                    match_ts = row.get_attribute('data-timestamp')
+                    if match_ts > str(now_ts) and match_ts < '1600000000':
+                        continue
+                    score_cell = row.find_element(By.CSS_SELECTOR, 'td.score')
+                    score = score_cell.text.strip()
+                    if score[-1] == 'P':
+                        continue
+                    goals = sum(map(lambda e: int(e), map(
+                        lambda e: e.strip(), score.split('-'))))
+                    if goals > 2:
+                        break
+                    count += 1
+                except selenium.common.exceptions.NoSuchElementException:
+                    continue
+
+            print('\t Nr meciuri cu golaveraj sub 2:', count)
+            m['MeciuriCuMax2goluri'] = count
+            df_matches.at[index, 'MeciuriCuMax2goluri'] = count
+            df_matches.at[index, 'Link'] = h2h_comparasion_link
+        except Exception as ex:
+            print('Error', ex)
+            continue
+
     df_matches.to_excel(writer, sheet_name=sheet_name, index=False)
     print('Saved to xlsx file:', OUTPUT_FILE)
 
