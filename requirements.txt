@@ -1,0 +1,9 @@
+selenium
+pandas
+numpy 
+scipy
+chromedriver-py
+chromedriver-binary
+scikit-learn
+nltk
+lxml
