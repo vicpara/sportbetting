@@ -41,13 +41,13 @@ ROOT_FILE = 'meciuri'
 
 
 parser = argparse.ArgumentParser(
-    description='Procesam meciurile si statisticile lor')
+    description='Procesam meciurile si statisticile lor. Exemplu de utilizare\n `python 3SocceWay --date 2023-08-30 --meciuri --stats`.')
 
 # Meciuri
-parser.add_argument('--meciuri', action='store_true', help='Listeaza toate ')
+parser.add_argument('--meciuri', action='store_true', help='Extrage toate meciurile zilei specificate la --date si le salveaza local in fisierul CSV. Optiunea --stats poate lipsi. ')
 # Statistici
 parser.add_argument('--stats', action='store_true',
-                    help='Extrage statisticile meciurile extrase in pasul 1 `--meciuri` meciuri')
+                    help='Extrage statisticile meciurile extrase in pasul 1. --meciuri este mereu executat primul. --stats porneste de la datele extrase de --meciuri. Argument optional, poate lipsi cand executi optiunea `--meciuri` meciuri')
 # Data
 parser.add_argument('--date', type=str,
                     help='Date in YYYY-MM-DD format', default=today)
